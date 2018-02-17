@@ -202,6 +202,50 @@ function! s:VimterminalConfig() abort
   endif
 endfunction
 
+function! s:VimterminalToggle() abort
+  if !exists("*term_start")
+    echoerr "vimterminal support requires vim built with :terminal support"
+    return
+  endif
+  if !exists("b:slime_config")
+    let b:slime_config = {"bufnr": ""}
+  end
+  if b:slime_config["bufnr"] == ""
+    let bufs = filter(term_list(),"term_getstatus(v:val)=~'running'")
+    let terms = map(bufs,"getbufinfo(v:val)[0]")
+    let choices = map(copy(terms),"s:VimterminalDescription(v:key+1,v:val)")
+    call add(choices, printf("%2d. <New instance>",len(terms)+1))
+    let choice = len(choices)>1
+          \ ? inputlist(choices)
+          \ : 1
+    if choice > 0
+      if choice>len(terms)
+        let type = &filetype
+        if type == "python"
+          let cmd = "python"
+        elseif type == "haskell"
+          let cmd = "ghci"
+        endif
+        let winid = win_getid()
+        if exists("g:slime_vimterminal_config")
+          let configs = g:slime_vimterminal_config
+        else
+          let configs = {}
+        end
+        let configs["term_finish"] = "close"
+        let new_bufnr = term_start(cmd, configs)
+        call win_gotoid(winid)
+        let b:slime_config["bufnr"] = new_bufnr
+      else
+        let b:slime_config["bufnr"] = terms[choice-1].bufnr
+      endif
+    endif
+  else
+    let bufnr = str2nr(get(b:slime_config,"bufnr",""))
+    let b:slime_config["bufnr"] = ""
+    call term_sendkeys(bufnr, "\<c-d>\<c-d>\<c-d>")
+  endif
+endfunction
 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Helpers
@@ -342,6 +386,12 @@ function! s:SlimeConfig() abort
   call inputrestore()
 endfunction
 
+function! s:SlimeToggle() abort
+  call inputsave()
+  call s:SlimeDispatch('Toggle')
+  call inputrestore()
+endfunction
+
 " delegation
 function! s:SlimeDispatch(name, ...)
   let target = substitute(tolower(g:slime_target), '\(.\)', '\u\1', '') " Capitalize
@@ -352,6 +402,7 @@ endfunction
 " Setup key bindings
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
+command -bar -nargs=0 SlimeToggle call s:SlimeToggle()
 command -bar -nargs=0 SlimeConfig call s:SlimeConfig()
 command -range -bar -nargs=0 SlimeSend call s:SlimeSendRange(<line1>, <line2>)
 command -nargs=+ SlimeSend1 call s:SlimeSend(<q-args> . "\r")
